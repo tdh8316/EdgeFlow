@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">EdgeFlow</string>
+    <string name="initialize">Initialize</string>
+    <string name="load_model">Load Model</string>
+    <string name="inference">Inference</string>
+    <string name="output_text">Output Text</string>
+    <string name="input">Input</string>
+</resources>
