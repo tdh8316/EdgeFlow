@@ -10,17 +10,18 @@
 #include <utility>
 
 class Orchestrator;
+
 class ComputationEngine {
 public:
-  ComputationEngine(Orchestrator *orch, std::shared_ptr<ModelDAG> dag);
+  ComputationEngine(Orchestrator &orch, const ModelDAG &dag);
   ~ComputationEngine();
 
   /// Computation task worker processes
   struct Task {
-    std::shared_ptr<ExecutionUnit> eu;
+    const ExecutionUnit &eu;
     std::unique_ptr<arm_compute::Tensor> input;
 
-    Task(std::shared_ptr<ExecutionUnit> eu,
+    Task(const ExecutionUnit &eu,
          std::unique_ptr<arm_compute::Tensor> input)
         : eu(eu), input(std::move(input)) {}
   };
@@ -28,7 +29,7 @@ public:
   /// Enqueue an execution unit for processing
   /// @param eu Execution unit to run
   /// @param input The input tensor for the execution unit
-  void submit_task(std::shared_ptr<ExecutionUnit> eu,
+  void submit_task(const ExecutionUnit &eu,
                    std::unique_ptr<arm_compute::Tensor> input);
 
 private:
@@ -38,11 +39,13 @@ private:
   /// forward the output.
   void worker_thread_loop();
 
-  std::unique_ptr<arm_compute::Tensor>
-  execute_operator(const ExecutionUnit &eu, arm_compute::Tensor &input);
+  static std::unique_ptr<arm_compute::Tensor>
+  execute_operator(
+          const ExecutionUnit &eu,
+          std::unique_ptr<arm_compute::Tensor> input);
 
-  Orchestrator *orch_ = nullptr;
-  std::shared_ptr<ModelDAG> dag_ = nullptr;
+  Orchestrator &orch_; // For invoking `on_computation_complete`
+  const ModelDAG &dag_;
 
   ThreadSafeQueue<Task> task_queue_;
   std::vector<std::thread> worker_threads_;

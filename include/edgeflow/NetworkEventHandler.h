@@ -11,9 +11,9 @@ class Orchestrator;
 
 class NetworkEventHandler {
 public:
-  NetworkEventHandler(Orchestrator *orch,
-                      std::shared_ptr<DeviceInfo> device_info,
-                      std::shared_ptr<DeviceMap> device_map);
+  NetworkEventHandler(Orchestrator &orch,
+                      const DeviceInfo &device_info,
+                      const DeviceMap &device_map);
   ~NetworkEventHandler();
 
   /// Start listening for incoming connections
@@ -35,17 +35,17 @@ public:
   /// @param dest_eu_id The ID of the destination execution unit
   /// @param data The intermediate result tensor received
   void
-  on_receive_intermediate_result(std::unique_ptr<ExecutionUnitID> dest_eu_id,
+  on_receive_intermediate_result(const ExecutionUnitID &dest_eu_id,
                                  std::unique_ptr<arm_compute::Tensor> data);
 
 private:
   void listener_loop();
   // void handle_client_connection(Socket client_socket);
 
-  std::shared_ptr<DeviceInfo> device_info_ = nullptr;
-  std::shared_ptr<DeviceMap> device_map_ = nullptr;
+  const DeviceInfo &device_info_;
+  const DeviceMap &device_map_;
 
-  Orchestrator *orch_ = nullptr;
+  Orchestrator &orch_;
 
   // Socket server_socket_;
   std::thread listener_thread_;

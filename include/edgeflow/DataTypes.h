@@ -119,7 +119,7 @@ struct ConcatenationParams {
   unsigned int axis = 0; // Axis along which to concatenate
 };
 
-// TODO: Operation-specific parameters
+// TODO: Operation-specific parameters...
 
 using OperatorParams =
         std::variant<ActivationParams, LinearParams, ConvolutionParams,
@@ -134,7 +134,7 @@ struct Operator {
   OperatorType type;
 
   // Operation-specific hyper-parameters
-  std::shared_ptr<OperatorParams> params;
+  std::unique_ptr<OperatorParams> params;
 };
 
 /// Single input requirement of the execution unit
@@ -147,20 +147,13 @@ struct InputRequirement {
   Range src_range; // May go outside [0, H)
 };
 
-struct ExecutionUnit;
-
-struct ForwardTableEntry {
-  ExecutionUnitID dest_eu_id; // The destination execution unit ID
-  Range required_range;       // The required range of this execution unit's output
-};
-
 /// ForwardTable tells the execution units where to forward its output features.
 /// Notice that the next execution unit might only require parts of the results.
 /// Therefore, the forward table should include both the target and the required
 /// range of its output.
-struct ForwardTable {
-  // The next execution unit and range of the output it requires
-  std::vector<ForwardTableEntry> entries;
+struct ForwardTableEntry {
+  ExecutionUnitID dest_eu_id; // The destination execution unit ID
+  Range required_range;       // The required range of this execution unit's output
 };
 
 /// Defines the execution unit
@@ -186,7 +179,7 @@ struct ExecutionUnit {
   Operator op;
 
   // Forwarding table of the current execution unit
-  ForwardTable forward_table;
+  std::vector<ForwardTableEntry> forward_table;
 
   // For Orchestrator, assembled input information
   arm_compute::TensorShape expected_input_shape;
@@ -220,7 +213,7 @@ struct Layer {
   OperatorType type;
 
   // Original operation-specific hyper-parameters
-  std::shared_ptr<OperatorParams> params;
+  std::unique_ptr<OperatorParams> params;
 
   // Layer input and output shapes
   arm_compute::TensorShape input_shape, output_shape;

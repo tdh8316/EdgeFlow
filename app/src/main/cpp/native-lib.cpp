@@ -31,15 +31,18 @@ MainActivity(initializeEdgeFlow)(
   /* Convert jstring to std::string */
   const char *model_dag_path_c = env->GetStringUTFChars(model_dag_path_jstr, nullptr);
   const auto model_dag_path_str = std::string(model_dag_path_c);
+  env->ReleaseStringUTFChars(model_dag_path_jstr, model_dag_path_c);
 
   const char *device_info_c = env->GetStringUTFChars(device_info_jstr, nullptr);
   const auto device_info_str = std::string(device_info_c);
+  env->ReleaseStringUTFChars(device_info_jstr, device_info_c);
 
   const char *devices_c = env->GetStringUTFChars(devices_jstr, nullptr);
   const auto devices_str = std::string(devices_c);
+  env->ReleaseStringUTFChars(devices_jstr, devices_c);
 
   /* Create a ModelDAG object */
-  auto dag = std::make_shared<ModelDAG>();
+  auto dag = std::make_unique<ModelDAG>();
   // TODO: Load the model DAG from the JSON file
 
   // Sample model: simple MLP for XOR operation
@@ -87,12 +90,12 @@ MainActivity(initializeEdgeFlow)(
     }
 
     // Layer parameters
-    auto layer0_params = std::make_shared<OperatorParams>(
+    auto layer0_params = std::make_unique<OperatorParams>(
             LinearParams{
                     .weight = std::move(weights0),
                     .bias = std::move(bias0),
             });
-    auto layer1_params = std::make_shared<OperatorParams>(
+    auto layer1_params = std::make_unique<OperatorParams>(
             LinearParams{
                     .weight = std::move(weights1),
                     .bias = std::move(bias1),
@@ -102,28 +105,26 @@ MainActivity(initializeEdgeFlow)(
     {
       dag->layers["layer0"] = Layer{.id = "layer0",
                                     .type = OperatorType::Linear,
-                                    .params = layer0_params,
+                                    .params = std::move(layer0_params),
                                     .input_shape = arm_compute::TensorShape(2),
                                     .output_shape = arm_compute::TensorShape(2)};
       dag->layers["act0"] = Layer{.id = "act0",
                                   .type = OperatorType::Activation,
-                                  .params = std::make_shared<OperatorParams>(
-                                          ActivationParams{
-                                                  .type = ActivationType::ReLU,
-                                          }),
+                                  .params = std::make_unique<OperatorParams>(ActivationParams{
+                                          .type = ActivationType::ReLU,
+                                  }),
                                   .input_shape = arm_compute::TensorShape(2),
                                   .output_shape = arm_compute::TensorShape(2)};
       dag->layers["layer1"] = Layer{.id = "layer1",
                                     .type = OperatorType::Linear,
-                                    .params = layer1_params,
+                                    .params = std::move(layer1_params),
                                     .input_shape = arm_compute::TensorShape(2),
                                     .output_shape = arm_compute::TensorShape(1)};
       dag->layers["act1"] = Layer{.id = "act1",
                                   .type = OperatorType::Activation,
-                                  .params = std::make_shared<OperatorParams>(
-                                          ActivationParams{
-                                                  .type = ActivationType::ReLU,
-                                          }),
+                                  .params = std::make_unique<OperatorParams>(ActivationParams{
+                                          .type = ActivationType::ReLU,
+                                  }),
                                   .input_shape = arm_compute::TensorShape(1),
                                   .output_shape = arm_compute::TensorShape(1)};
     }
@@ -139,14 +140,11 @@ MainActivity(initializeEdgeFlow)(
               .output_range = Range{0, 2},
               .op = Operator{
                       .type = OperatorType::Linear,
-                      .params = dag->layers["layer0"].params,
+                      .params = std::move(dag->layers["layer0"].params),
               },
-              .forward_table = {.entries{
-                      {
-                              "act0::eu0",
-                              Range{0, 2},
-                      },
-              }},
+              .forward_table = {
+                      {"act0::eu0", Range{0, 2}},
+              },
               .expected_input_shape = arm_compute::TensorShape(2),
               .expected_output_shape = arm_compute::TensorShape(2),
               .is_leaf = false,
@@ -160,14 +158,11 @@ MainActivity(initializeEdgeFlow)(
               .output_range = Range{0, 2},
               .op = Operator{
                       .type = OperatorType::Activation,
-                      .params = dag->layers["act0"].params,
+                      .params = std::move(dag->layers["act0"].params),
               },
-              .forward_table = {.entries{
-                      {
-                              "layer1::eu0",
-                              Range{0, 2},
-                      },
-              }},
+              .forward_table = {
+                      {"layer1::eu0", Range{0, 2}},
+              },
               .expected_input_shape = arm_compute::TensorShape(2),
               .expected_output_shape = arm_compute::TensorShape(2),
               .is_leaf = false,
@@ -181,14 +176,11 @@ MainActivity(initializeEdgeFlow)(
               .output_range = Range{0, 1},
               .op = Operator{
                       .type = OperatorType::Linear,
-                      .params = dag->layers["layer1"].params,
+                      .params = std::move(dag->layers["layer1"].params),
               },
-              .forward_table = {.entries{
-                      {
-                              "act1::eu0",
-                              Range{0, 1},
-                      },
-              }},
+              .forward_table = {
+                      {"act1::eu0", Range{0, 1}},
+              },
               .expected_input_shape = arm_compute::TensorShape(2),
               .expected_output_shape = arm_compute::TensorShape(1),
               .is_leaf = false,
@@ -202,7 +194,7 @@ MainActivity(initializeEdgeFlow)(
               .output_range = Range{0, 1},
               .op = Operator{
                       .type = OperatorType::Activation,
-                      .params = dag->layers["act1"].params,
+                      .params = std::move(dag->layers["act1"].params),
               },
               .forward_table = {}, // No forwarding table for the last layer
               .expected_input_shape = arm_compute::TensorShape(1),
@@ -214,7 +206,7 @@ MainActivity(initializeEdgeFlow)(
   }
 
   /* Create a DeviceInfo object */
-  auto device_info = std::make_shared<DeviceInfo>();
+  auto device_info = std::make_unique<DeviceInfo>();
   device_info->id = "device0"; // TODO: Parse this from the device_info_str JSON string
 
   /* Create a device list */
@@ -222,16 +214,11 @@ MainActivity(initializeEdgeFlow)(
   // TODO: Parse the devices_str JSON string
 
   /* Initialize EdgeFlow */
-  bool result = g_edgeflow.initialize(dag, device_info, devices_list);
+  bool result = g_edgeflow.initialize(std::move(dag), std::move(device_info), devices_list);
   if (!result) {
     __android_log_print(ANDROID_LOG_ERROR, "initializeEdgeFlow",
                         "Failed to initialize EdgeFlow");
   }
-
-  /* Release the jstring */
-  env->ReleaseStringUTFChars(model_dag_path_jstr, model_dag_path_c);
-  env->ReleaseStringUTFChars(device_info_jstr, device_info_c);
-  env->ReleaseStringUTFChars(devices_jstr, devices_c);
 
   return result ? JNI_TRUE : JNI_FALSE;
 }

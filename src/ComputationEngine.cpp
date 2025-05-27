@@ -11,9 +11,9 @@
 #include "arm_compute/runtime/NEON/functions/NESoftmaxLayer.h"
 #include "edgeflow/ComputationEngine.h"
 
-ComputationEngine::ComputationEngine(Orchestrator *orch,
-                                     std::shared_ptr<ModelDAG> dag)
-    : orch_(orch), dag_(std::move(dag)) {
+ComputationEngine::ComputationEngine(Orchestrator &orch,
+                                     const ModelDAG &dag)
+    : orch_(orch), dag_(dag) {
   for (unsigned int i = 0; i < num_workers_; ++i) {
     worker_threads_.emplace_back(&ComputationEngine::worker_thread_loop, this);
   }
@@ -32,28 +32,27 @@ ComputationEngine::~ComputationEngine() {
 }
 
 void ComputationEngine::submit_task(
-        std::shared_ptr<ExecutionUnit> eu,
+        const ExecutionUnit &eu,
         std::unique_ptr<arm_compute::Tensor> input) {
-  auto task = std::make_unique<Task>(std::move(eu), std::move(input));
+  auto task = std::make_unique<Task>(eu, std::move(input));
   task_queue_.push(std::move(task));
 }
 
 void ComputationEngine::worker_thread_loop() {
   while (!stop_) {
-    auto task = task_queue_.pop();
+    const auto task = task_queue_.pop();
 
     // 1. Pre-process input tensor
     // TODO: Pre-process input tensor if needed
 
     // 2. Execute the operator for the execution unit
-    std::unique_ptr<arm_compute::Tensor> output =
-            execute_operator(*task->eu, *task->input);
+    std::unique_ptr<arm_compute::Tensor> output = execute_operator(task->eu, std::move(task->input));
     if (output) {
-      orch_->on_computation_complete(task->eu, std::move(output));
+      orch_.on_computation_complete(task->eu, std::move(output));
     } else {
       __android_log_print(
               ANDROID_LOG_ERROR, "ComputationEngine::worker_thread_loop",
-              "No output produced for execution unit %s", task->eu->id.c_str());
+              "No output produced for execution unit %s", task->eu.id.c_str());
     }
   }
 
@@ -63,7 +62,7 @@ void ComputationEngine::worker_thread_loop() {
 
 std::unique_ptr<arm_compute::Tensor>
 ComputationEngine::execute_operator(const ExecutionUnit &eu,
-                                    arm_compute::Tensor &input) {
+                                    std::unique_ptr<arm_compute::Tensor> input) {
   auto output = std::make_unique<arm_compute::Tensor>();
   output->allocator()->init(arm_compute::TensorInfo(
           eu.expected_output_shape, 1, arm_compute::DataType::F32));
@@ -75,28 +74,28 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
       switch (params.type) {
         case ActivationType::ReLU: {
           arm_compute::NEActivationLayer activation_layer;
-          activation_layer.configure(&input, output.get(),
+          activation_layer.configure(input.get(), output.get(),
                                      arm_compute::ActivationFunction::RELU);
           activation_layer.run();
           break;
         }
         case ActivationType::Sigmoid: {
           arm_compute::NEActivationLayer activation_layer;
-          activation_layer.configure(&input, output.get(),
+          activation_layer.configure(input.get(), output.get(),
                                      arm_compute::ActivationFunction::LOGISTIC);
           activation_layer.run();
           break;
         }
         case ActivationType::Softmax: {
           arm_compute::NESoftmaxLayer softmax_layer;
-          softmax_layer.configure(&input, output.get());
+          softmax_layer.configure(input.get(), output.get());
           softmax_layer.run();
           break;
         }
         case ActivationType::Swish:
         case ActivationType::SiLU: {
           arm_compute::NEActivationLayer activation_layer;
-          activation_layer.configure(&input, output.get(),
+          activation_layer.configure(input.get(), output.get(),
                                      arm_compute::ActivationFunction::SWISH);
           activation_layer.run();
           break;
@@ -116,7 +115,7 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
       arm_compute::Tensor var;
       // TODO: Initialize var tensor
       arm_compute::NEBatchNormalizationLayer batch_norm_layer;
-      batch_norm_layer.configure(&input, output.get(), params.mean.get(),
+      batch_norm_layer.configure(input.get(), output.get(), params.mean.get(),
                                  &var, params.beta.get(),
                                  params.gamma.get());
       batch_norm_layer.run();
@@ -140,7 +139,7 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
               params.padding_w, params.padding_h,
               arm_compute::DimensionRoundingType::CEIL);
       conv_layer.configure(
-              &input, params.weight.get(), params.bias.get(), output.get(), conv_info);
+              input.get(), params.weight.get(), params.bias.get(), output.get(), conv_info);
       conv_layer.run();
       break;
     }
@@ -153,13 +152,13 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
       break;
     }
     case OperatorType::Identity: {
-      output->copy_from(input);
+      output->copy_from(*input);
     }
     case OperatorType::Linear: {
       const auto &params = std::get<LinearParams>(*eu.op.params);
       arm_compute::NEFullyConnectedLayer fc_layer;
       // TODO: Maybe fused activation?
-      fc_layer.configure(&input, params.weight.get(), params.bias.get(),
+      fc_layer.configure(input.get(), params.weight.get(), params.bias.get(),
                          output.get());
       fc_layer.run();
       break;
@@ -168,7 +167,7 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
       const auto &params = std::get<PoolingParams>(*eu.op.params);
       arm_compute::NEPoolingLayer pooling_layer;
       auto pool_info = arm_compute::PoolingLayerInfo(); // TODO: Set pooling info
-      pooling_layer.configure(&input, output.get(), pool_info);
+      pooling_layer.configure(input.get(), output.get(), pool_info);
       pooling_layer.run();
       break;
     }
@@ -176,7 +175,7 @@ ComputationEngine::execute_operator(const ExecutionUnit &eu,
       const auto &params = std::get<PoolingParams>(*eu.op.params);
       arm_compute::NEPoolingLayer pooling_layer;
       auto pool_info = arm_compute::PoolingLayerInfo(); // TODO: Set pooling info
-      pooling_layer.configure(&input, output.get(), pool_info);
+      pooling_layer.configure(input.get(), output.get(), pool_info);
       pooling_layer.run();
       break;
     }

@@ -27,8 +27,8 @@ public:
   /// @param dag The model DAG to be executed
   /// @param device_info Local device information
   /// @param devices List of devices to be used
-  bool initialize(std::shared_ptr<ModelDAG> dag,
-                  std::shared_ptr<DeviceInfo> device_info,
+  bool initialize(std::unique_ptr<ModelDAG> dag,
+                  std::unique_ptr<DeviceInfo> device_info,
                   const std::vector<DeviceInfo> &devices);
 
   /// Register the JNI callback for the Java side
@@ -50,15 +50,17 @@ private:
   EdgeFlow() = default;
 
   // Model definition
-  std::shared_ptr<ModelDAG> dag_ = nullptr;
+  std::unique_ptr<ModelDAG> dag_ = nullptr;
 
   // Local device information
-  std::shared_ptr<DeviceInfo> device_info_ = nullptr;
+  std::unique_ptr<DeviceInfo> device_info_ = nullptr;
 
   // DeviceID |-> DeviceInfo mapping
-  std::shared_ptr<DeviceMap> device_map_ = nullptr;
+  std::unique_ptr<DeviceMap> device_map_ = nullptr;
 
-  Orchestrator *orch_ = nullptr;
+  // Orchestrator instance that manages the inference process
+  std::unique_ptr<Orchestrator> orch_ = nullptr;
+
   std::mutex inference_state_mtx_{};
   bool inference_active_ = false;
 

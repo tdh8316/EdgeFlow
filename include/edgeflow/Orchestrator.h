@@ -12,9 +12,9 @@ class NetworkEventHandler;
 
 class Orchestrator {
 public:
-  Orchestrator(std::shared_ptr<ModelDAG> dag,
-               std::shared_ptr<DeviceInfo> device_info,
-               std::shared_ptr<DeviceMap> device_map);
+  Orchestrator(const ModelDAG &dag,
+               const DeviceInfo &device_info,
+               const DeviceMap &device_map);
 
   ~Orchestrator();
 
@@ -56,7 +56,7 @@ public:
   /// next execution unit.
   /// @param completed_eu The completed execution unit
   /// @param output The output tensor of the execution unit itself
-  void on_computation_complete(const std::shared_ptr<ExecutionUnit> &completed_eu,
+  void on_computation_complete(const ExecutionUnit &completed_eu,
                                std::unique_ptr<arm_compute::Tensor> output);
 
 private:
@@ -69,17 +69,17 @@ private:
   /// @param src_eu The execution unit that produced the output
   /// @param output The output tensor to be dispatched
   void dispatch_output(const ExecutionUnit &src_eu,
-                       const std::unique_ptr<arm_compute::Tensor> &output);
+                       std::unique_ptr<arm_compute::Tensor> output);
 
-  std::shared_ptr<ExecutionUnit>
+  const ExecutionUnit *
   get_execution_unit(const ExecutionUnitID &eu_id) const;
 
-  std::shared_ptr<ModelDAG> dag_ = nullptr;
-  std::shared_ptr<DeviceInfo> device_info_ = nullptr;
-  std::shared_ptr<DeviceMap> device_map_ = nullptr;
+  const ModelDAG& dag_;
+  const DeviceInfo& device_info_;
+  const DeviceMap& device_map_;
 
-  ComputationEngine *computation_engine_ = nullptr;
-  NetworkEventHandler *network_event_handler_ = nullptr;
+  std::unique_ptr<ComputationEngine> computation_engine_ = nullptr;
+  std::unique_ptr<NetworkEventHandler> network_event_handler_ = nullptr;
 
   // EdgeFlow::on_inference_complete() will be assigned to this
   Callback inference_complete_callback_ = nullptr;

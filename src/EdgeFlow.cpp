@@ -32,27 +32,28 @@ void print_tensor(const arm_compute::Tensor &tensor, const std::string &name) {
                       output_str.c_str());
 }
 
-bool EdgeFlow::initialize(std::shared_ptr<ModelDAG> dag,
-                          std::shared_ptr<DeviceInfo> device_info,
+bool EdgeFlow::initialize(std::unique_ptr<ModelDAG> dag,
+                          std::unique_ptr<DeviceInfo> device_info,
                           const std::vector<DeviceInfo> &devices) {
   if (is_initialized_) {
     __android_log_print(
             ANDROID_LOG_ERROR, "EdgeFlow::initialize",
-            "EdgeFlow is already initialized. Try re-initializing.");
-    delete orch_;
-    orch_ = nullptr;
+            "EdgeFlow is already initialized.");
+    return false;
   }
 
   /* Store the model DAG and device information */
   // TODO: Validate the model DAG and device information
   dag_ = std::move(dag);
   device_info_ = std::move(device_info);
-  device_map_ = std::make_shared<DeviceMap>();
+
+  device_map_ = std::make_unique<DeviceMap>();
   for (const auto &device: devices) {
     device_map_->emplace(device.id, device);
   }
 
-  orch_ = new Orchestrator(dag_, device_info_, device_map_);
+  orch_ = std::make_unique<Orchestrator>(
+          *dag_, *device_info_, *device_map_);
   orch_->register_inference_complete_callback(
           [&](const arm_compute::Tensor &output) -> void {
             on_inference_complete(output);
