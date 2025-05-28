@@ -113,10 +113,11 @@ class MainActivity : AppCompatActivity() {
     /// @param result The result of the inference
     @SuppressLint("SetTextI18n")
     @Keep
-    fun onInferenceComplete(result: String) {
+    fun onInferenceComplete(tensor: FloatArray, info: String) {
         runOnUiThread {
             val text = binding.outputText.text?.toString() ?: ""
-            binding.outputText.setText("$text[i] Inference result: $result\n")
+            binding.outputText.setText("$text[i] output=${tensor.contentToString()}\n")
+            binding.outputText.append("[i] info=$info\n")
         }
     }
 

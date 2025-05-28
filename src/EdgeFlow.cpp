@@ -159,22 +159,44 @@ void EdgeFlow::on_inference_complete(const arm_compute::Tensor &output) {
     return;
   }
 
-  // Convert the output tensor to a string representation
-  // std::string output_str = "Output tensor: ";
-  std::string output_str{};
-  const auto *ptr = reinterpret_cast<float *>(output.buffer());
-  const int n_elems =
-          (int) (output.info()->total_size() / output.info()->element_size());
-  for (size_t i = 0; i < n_elems; ++i) {
-    output_str += std::to_string(ptr[i]);
-    if (i < n_elems - 1) {
-      output_str += ", ";
-    }
+  /* Build an array of floats from the output tensor */
+  const auto *output_data = reinterpret_cast<const float *>(output.buffer());
+  const auto output_size = static_cast<jsize>(output.info()->total_size() /
+                                              output.info()->element_size());
+  jfloatArray j_output_arr = env->NewFloatArray(output_size);
+  if (j_output_arr == nullptr) {
+    __android_log_print(ANDROID_LOG_ERROR, "EdgeFlow::on_inference_complete",
+                        "Failed to create jfloatArray for output");
+    return;
+  }
+  env->SetFloatArrayRegion(j_output_arr, 0, output_size, output_data);
+  if (env->ExceptionCheck()) {
+    __android_log_print(ANDROID_LOG_ERROR, "EdgeFlow::on_inference_complete",
+                        "Failed to set float array region for output");
+    env->DeleteLocalRef(j_output_arr);
+    return;
   }
 
-  jstring j_output_str = env->NewStringUTF(output_str.c_str());
-  env->CallVoidMethod(java_callback_obj_, java_callback_method_, j_output_str);
-  env->DeleteLocalRef(j_output_str);
+  /* Build an information string about the output tensor */
+  std::string info = "{}";
+  // TODO: Fill the info string with relevant details about the output tensor
+  jstring j_info_str = env->NewStringUTF(info.c_str());
+  if (j_info_str == nullptr) {
+    __android_log_print(ANDROID_LOG_ERROR, "EdgeFlow::on_inference_complete",
+                        "Failed to create jstring for output info");
+    env->DeleteLocalRef(j_output_arr);
+    return;
+  }
+
+  // Function parameters: FloatArray, String
+  env->CallVoidMethod(java_callback_obj_, java_callback_method_,
+                      /* args... */ j_output_arr, j_info_str);
+  env->DeleteLocalRef(j_output_arr);
+  env->DeleteLocalRef(j_info_str);
+  if (env->ExceptionCheck()) {
+    __android_log_print(ANDROID_LOG_ERROR, "EdgeFlow::on_inference_complete",
+                        "Exception occurred while calling Java callback method");
+  }
 
   {
     std::lock_guard<std::mutex> lock(inference_state_mtx_);

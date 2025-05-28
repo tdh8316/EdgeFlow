@@ -295,7 +295,7 @@ MainActivity(registerJavaCallback)(
   }
 
   // Obtain the method ID of `onInferenceComplete` method in Java
-  jmethodID method = env->GetMethodID(cls, "onInferenceComplete", "(Ljava/lang/String;)V");
+  jmethodID method = env->GetMethodID(cls, "onInferenceComplete", "([FLjava/lang/String;)V");
   if (method == nullptr) {
     __android_log_print(ANDROID_LOG_ERROR, "registerJavaCallback",
                         "Failed to get method ID");

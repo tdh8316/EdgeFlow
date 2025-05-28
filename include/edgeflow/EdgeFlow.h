@@ -42,7 +42,8 @@ public:
   bool inference(std::unique_ptr<arm_compute::Tensor> input);
 
   /// Callback function to be called by Orchestrator
-  /// when the inference process is complete
+  /// when the inference process is complete.
+  /// This function will invoke the registered JNI callback
   /// @param output The output tensor
   void on_inference_complete(const arm_compute::Tensor &output);
 
