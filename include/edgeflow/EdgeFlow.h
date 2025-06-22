@@ -31,7 +31,7 @@ public:
                   std::unique_ptr<DeviceInfo> device_info,
                   const std::vector<DeviceInfo> &devices);
 
-  /// Register the JNI callback for the Java side
+  /// Register the JNI completion callback for the Java side
   /// @param env
   /// @param thiz
   /// @param callback
@@ -62,6 +62,7 @@ private:
   // Orchestrator instance that manages the inference process
   std::unique_ptr<Orchestrator> orch_ = nullptr;
 
+  // Manages the inference process state
   std::mutex inference_state_mtx_{};
   bool inference_active_ = false;
 

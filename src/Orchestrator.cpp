@@ -10,26 +10,23 @@ Orchestrator::Orchestrator(const ModelDAG &dag,
 
   // Initialize the network listener
   network_event_handler_ = std::make_unique<NetworkEventHandler>(
-          *this, device_info_, device_map_);
+      *this, device_info_, device_map_);
   network_event_handler_->start_listening(device_info_.port);
 
   // Initialize the input states for each execution unit
   for (const auto &eu_map: dag_.eus) {
     const ExecutionUnit &eu = eu_map.second;
-    if (eu.device_id == device_info_.id) {
+    if (eu.assigned_device == device_info_.id) {
       // Initialize the input state for the execution unit
       input_states_[eu.id].num_expected = eu.input_requirements.size();
     }
   }
 }
 
-Orchestrator::~Orchestrator() {
-  // Stop the network event handler
-  network_event_handler_->stop_listening();
-}
+Orchestrator::~Orchestrator() = default;
 
 void Orchestrator::register_inference_complete_callback(
-        Orchestrator::Callback inference_complete_callback) {
+    Orchestrator::Callback inference_complete_callback) {
   inference_complete_callback_ = std::move(inference_complete_callback);
 }
 
@@ -44,7 +41,8 @@ bool Orchestrator::start_inference(std::unique_ptr<arm_compute::Tensor> input) {
     const auto eu = get_execution_unit(eu_id);
     if (!eu) {
       __android_log_print(ANDROID_LOG_ERROR, "Orchestrator::start_inference",
-                          "Execution unit %s not found", eu_id.c_str());
+                          "Execution unit %.*s not found in the DAG",
+                          static_cast<int>(eu_id.size()), eu_id.data());
       return false;
     }
 
@@ -54,23 +52,8 @@ bool Orchestrator::start_inference(std::unique_ptr<arm_compute::Tensor> input) {
     input_state.num_received = 0;
 
     // Find the number of leaf execution units on this device
-    if (eu->is_leaf && eu->device_id == device_info_.id) {
+    if (eu->is_leaf && eu->assigned_device == device_info_.id) {
       ++exit_eu_on_this_device;
-    }
-
-    // Handle the root execution unit (input layer)
-    if (eu->is_root && eu->device_id == device_info_.id) {
-      if (eu->input_requirements.empty()) {
-        // Start the inference on the root execution unit
-        computation_engine_->submit_task(*eu, std::move(input));
-      } else {
-        __android_log_print(
-                ANDROID_LOG_ERROR, "Orchestrator::start_inference",
-                "Input requirements for execution unit %s not empty, "
-                "which should be empty for the root execution unit",
-                eu_id.c_str());
-        return false;
-      }
     }
   }
   num_pending_leaf_eus_.store(exit_eu_on_this_device);
@@ -78,19 +61,41 @@ bool Orchestrator::start_inference(std::unique_ptr<arm_compute::Tensor> input) {
     __android_log_print(ANDROID_LOG_WARN, "Orchestrator::start_inference", "No leaf execution units on this device!");
   }
 
+  // Initiate the inference by checking the root execution units
+  for (std::pair<const ExecutionUnitID, InputState> &eu_state: input_states_) {
+    const auto &eu_id = eu_state.first;
+    const auto eu = get_execution_unit(eu_id);
+
+    // Handle the root execution unit (i.e., input layer)
+    if (eu->is_root && eu->assigned_device == device_info_.id) {
+      if (eu->input_requirements.empty()) {
+        // Start the inference on the root execution unit
+        computation_engine_->submit_task(*eu, std::move(input));
+      } else {
+        __android_log_print(
+            ANDROID_LOG_ERROR, "Orchestrator::start_inference",
+            "Input requirements for execution unit %.*s are not empty: %zu"
+            " which should be empty for the root execution unit",
+            static_cast<int>(eu_id.size()), eu_id.data(),
+            eu->input_requirements.size());
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
 void Orchestrator::on_receive_intermediate_result(
-        std::unique_ptr<ExecutionUnitID> src_eu_id,
-        std::unique_ptr<ExecutionUnitID> dest_eu_id,
-        std::unique_ptr<arm_compute::Tensor> data) {
-  // TODO
+    std::unique_ptr<ExecutionUnitID> src_eu_id,
+    std::unique_ptr<ExecutionUnitID> dest_eu_id,
+    std::unique_ptr<arm_compute::Tensor> data) {
+  // TODO: handle the received intermediate result
 }
 
 void Orchestrator::on_computation_complete(
-        const ExecutionUnit &completed_eu,
-        std::unique_ptr<arm_compute::Tensor> output) {
+    const ExecutionUnit &completed_eu,
+    std::unique_ptr<arm_compute::Tensor> output) {
   // Check if the output is from a leaf execution unit
   if (completed_eu.is_leaf) {
     std::lock_guard<std::mutex> lock(collected_final_outputs_mtx_);
@@ -100,14 +105,16 @@ void Orchestrator::on_computation_complete(
 
     int remaining = num_pending_leaf_eus_.fetch_sub(1) - 1;
     __android_log_print(
-            ANDROID_LOG_INFO, "Orchestrator::on_computation_complete",
-            "A leaf execution unit is completed; remaining leaf execution units: %d", remaining);
+        ANDROID_LOG_INFO, "Orchestrator::on_computation_complete",
+        "A single leaf execution unit is completed;"
+        " %d remaining leaf units",
+        remaining);
 
     if (remaining == 0) {
       if (inference_complete_callback_) {
         __android_log_print(
-                ANDROID_LOG_INFO, "Orchestrator::on_computation_complete",
-                "All leaf execution units completed; invoke inference_complete_callback_");
+            ANDROID_LOG_INFO, "Orchestrator::on_computation_complete",
+            "All leaf execution units completed; invoking callback");
         // Invoke the callback with the collected final outputs
         // TODO: Combine the outputs before invoking the callback
         for (const auto &output_pair: collected_final_outputs_) {
@@ -121,12 +128,12 @@ void Orchestrator::on_computation_complete(
                             "Inference completed, but no callback registered");
       }
     }
-  } else {
-    // Check the forward table for non-leaf execution units
+  } else { // If the execution unit is not a leaf
+    // Check the forward table
     if (completed_eu.forward_table.empty()) {
       __android_log_print(ANDROID_LOG_ERROR, "Orchestrator::dispatch_output",
-                          "No forward table entries for non-leaf execution unit %s",
-                          completed_eu.id.c_str());
+                          "No forward table entries for non-leaf execution unit %.*s",
+                          static_cast<int>(completed_eu.id.size()), completed_eu.id.data());
     } else {
       // Dispatch the output to the next execution units
       dispatch_output(completed_eu, std::move(output));
@@ -134,17 +141,20 @@ void Orchestrator::on_computation_complete(
   }
 }
 
-void Orchestrator::check_and_run_eu(const ExecutionUnitID &eu_id) {}
+void Orchestrator::check_and_run_eu(const ExecutionUnitID &eu_id) {
+  // TODO: What to do here?
+}
 
 std::unique_ptr<arm_compute::Tensor>
 Orchestrator::assemble_input_for_eu(const ExecutionUnit &eu,
                                     InputState &input_state) {
-  return {};
+  // TODO: Assemble the input tensor for the execution unit
+  return nullptr;
 }
 
 void Orchestrator::dispatch_output(
-        const ExecutionUnit &src_eu,
-        std::unique_ptr<arm_compute::Tensor> output) {
+    const ExecutionUnit &src_eu,
+    std::unique_ptr<arm_compute::Tensor> output) {
   for (const auto &entry: src_eu.forward_table) {
     const auto &dest_eu_id = entry.dest_eu_id;
 
@@ -155,8 +165,9 @@ void Orchestrator::dispatch_output(
     const auto dest_eu = get_execution_unit(dest_eu_id);
     if (!dest_eu) {
       __android_log_print(ANDROID_LOG_ERROR, "Orchestrator::dispatch_output",
-                          "Invalid destination execution unit %s for source %s",
-                          dest_eu_id.c_str(), src_eu.id.c_str());
+                          "Invalid destination execution unit %.*s for source execution unit %.*s",
+                          static_cast<int>(dest_eu_id.size()), dest_eu_id.data(),
+                          static_cast<int>(src_eu.id.size()), src_eu.id.data());
       continue;
     }
 
@@ -165,13 +176,15 @@ void Orchestrator::dispatch_output(
     // In the future, we may need to slice the output tensor according to the required range
 
     // Check if the destination unit is on this device
-    if (device_info_.id == dest_eu->device_id) {
+    if (device_info_.id == dest_eu->assigned_device) {
       // Directly submit the task to the computation engine of this device
-      computation_engine_->submit_task(*dest_eu, std::move(output));
+      computation_engine_->submit_task(
+          *dest_eu, std::move(output));
     } else {
       // Send the output tensor over the network to the destination device
       network_event_handler_->send_intermediate_result(
-              dest_eu->device_id, dest_eu_id, *output);
+          dest_eu->assigned_device,
+          *dest_eu, std::move(output));
     }
   }
 }
@@ -183,6 +196,7 @@ Orchestrator::get_execution_unit(const ExecutionUnitID &eu_id) const {
     return &it->second;
   }
   __android_log_print(ANDROID_LOG_ERROR, "Orchestrator::get_execution_unit",
-                      "Execution unit %s not found", eu_id.c_str());
+                      "Execution unit %.*s not found",
+                      static_cast<int>(eu_id.size()), eu_id.data());
   return nullptr;
 }

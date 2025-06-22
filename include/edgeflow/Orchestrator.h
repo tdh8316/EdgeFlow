@@ -22,7 +22,7 @@ public:
   struct InputState {
     // Received intermediate results from the source execution units
     std::unordered_map<ExecutionUnitID, std::unique_ptr<arm_compute::Tensor>>
-            received{};
+        received{};
 
     unsigned int num_expected = 0;
     unsigned int num_received = 0;
@@ -42,7 +42,8 @@ public:
   bool start_inference(std::unique_ptr<arm_compute::Tensor> input);
 
   /// Callback function to be called when
-  /// receives an intermediate result from another device or a local device
+  /// receives an intermediate result from another device or a local device.
+  /// This function will be called by the NetworkEventHandler class.
   /// @param dest_eu The ID of destination execution unit
   /// @param data The intermediate result tensor used as an input
   /// for the dest_eu
@@ -71,12 +72,15 @@ private:
   void dispatch_output(const ExecutionUnit &src_eu,
                        std::unique_ptr<arm_compute::Tensor> output);
 
+  /// Get the execution unit in the model DAG by its ID
+  /// @param eu_id The ID of the execution unit
+  /// @return Pointer to the execution unit if found, nullptr otherwise
   const ExecutionUnit *
   get_execution_unit(const ExecutionUnitID &eu_id) const;
 
-  const ModelDAG& dag_;
-  const DeviceInfo& device_info_;
-  const DeviceMap& device_map_;
+  const ModelDAG &dag_;
+  const DeviceInfo &device_info_;
+  const DeviceMap &device_map_;
 
   std::unique_ptr<ComputationEngine> computation_engine_ = nullptr;
   std::unique_ptr<NetworkEventHandler> network_event_handler_ = nullptr;
@@ -90,7 +94,7 @@ private:
 
   // Leaf execution units
   std::unordered_map<ExecutionUnitID, std::unique_ptr<arm_compute::Tensor>>
-          collected_final_outputs_{};
+      collected_final_outputs_{};
   std::mutex collected_final_outputs_mtx_{};
 
   std::atomic<int> num_pending_leaf_eus_{0};

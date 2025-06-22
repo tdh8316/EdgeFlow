@@ -36,8 +36,8 @@ public:
     return item;
   }
 
-  /// Non-blocking pop
-  std::unique_ptr<T> try_pop() {
+  /// Non-blocking pop; returns nullptr if the queue is empty
+  [[maybe_unused]] std::unique_ptr<T> try_pop() {
     std::lock_guard<std::mutex> lock(mtx_);
     if (q_.empty())
       return nullptr;

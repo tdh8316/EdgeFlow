@@ -25,11 +25,11 @@ public:
 
   /// Send an intermediate result to another device
   /// @param dest_device_id The ID of the destination device
-  /// @param dest_eu_id The ID of the destination execution unit
+  /// @param dest_eu Destination execution unit
   /// @param data The intermediate result tensor to send
   void send_intermediate_result(const DeviceID &dest_device_id,
-                                const ExecutionUnitID &dest_eu_id,
-                                const arm_compute::Tensor &data);
+                                const ExecutionUnit &dest_eu,
+                                std::unique_ptr<arm_compute::Tensor> input);
 
   /// Callback function to be called when an intermediate result is received
   /// @param dest_eu_id The ID of the destination execution unit

@@ -8,8 +8,8 @@ void print_tensor(const arm_compute::Tensor &tensor, const std::string &name) {
   arm_compute::Window window;
   window.use_tensor_dimensions(tensor.info()->tensor_shape());
   const int n_elems =
-          (int) (tensor.info()->total_size() / tensor.info()->element_size());
-  std::string output_str = name + " (Shape: ";
+      (int) (tensor.info()->total_size() / tensor.info()->element_size());
+  std::string output_str = name + " (size: ";
   for (unsigned int i = 0; i < tensor.info()->num_dimensions(); ++i) {
     output_str += std::to_string(tensor.info()->dimension(i)) +
                   (i < tensor.info()->num_dimensions() - 1 ? "x" : "");
@@ -37,8 +37,8 @@ bool EdgeFlow::initialize(std::unique_ptr<ModelDAG> dag,
                           const std::vector<DeviceInfo> &devices) {
   if (is_initialized_) {
     __android_log_print(
-            ANDROID_LOG_ERROR, "EdgeFlow::initialize",
-            "EdgeFlow is already initialized.");
+        ANDROID_LOG_ERROR, "EdgeFlow::initialize",
+        "EdgeFlow is already initialized.");
     return false;
   }
 
@@ -53,16 +53,17 @@ bool EdgeFlow::initialize(std::unique_ptr<ModelDAG> dag,
   }
 
   orch_ = std::make_unique<Orchestrator>(
-          *dag_, *device_info_, *device_map_);
+      *dag_, *device_info_, *device_map_);
   orch_->register_inference_complete_callback(
-          [&](const arm_compute::Tensor &output) -> void {
-            on_inference_complete(output);
-          });
+      [&](const arm_compute::Tensor &output) -> void {
+        on_inference_complete(output);
+      });
 
   is_initialized_ = true;
   __android_log_print(ANDROID_LOG_INFO, "EdgeFlow::initialize",
-                      "EdgeFlow initialized successfully on device: %s",
-                      device_info_->id.c_str());
+                      "EdgeFlow initialized successfully on device: %.*s",
+                      static_cast<int>(device_info_->id.size()),
+                      device_info_->id.data());
 
   return true;
 }
@@ -84,8 +85,8 @@ void EdgeFlow::register_jni_callback(JNIEnv *env, jobject thiz,
                          JNI_VERSION_1_6) == JNI_EDETACHED) {
       if (java_vm_->AttachCurrentThread(&current_env, nullptr) != JNI_OK) {
         __android_log_print(
-                ANDROID_LOG_ERROR, "EdgeFlow::register_jni_callback",
-                "Failed to attach current thread to VM for DeleteGlobalRef");
+            ANDROID_LOG_ERROR, "EdgeFlow::register_jni_callback",
+            "Failed to attach current thread to VM for DeleteGlobalRef");
         // Proceed with caution, might leak java_callback_obj_
       } else {
         detach_needed = true;
@@ -109,7 +110,8 @@ bool EdgeFlow::inference(std::unique_ptr<arm_compute::Tensor> input) {
                         "EdgeFlow is not initialized");
     return false;
   }
-  print_tensor(*input, "Input tensor");
+
+  // print_tensor(*input, "Input tensor");
   {
     std::lock_guard<std::mutex> lock(inference_state_mtx_);
     if (inference_active_) {

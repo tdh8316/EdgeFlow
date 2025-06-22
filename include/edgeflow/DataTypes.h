@@ -12,138 +12,71 @@
 void print_tensor(const arm_compute::Tensor &tensor,
                   const std::string &name = "tensor");
 
-/* Primitive types */
-using DeviceID = std::string;
-using LayerID = std::string;
-using ExecutionUnitID = std::string;
+using DeviceID = std::string_view;
+using LayerID = std::string_view;
+using ExecutionUnitID = std::string_view;
+using ParamsT = std::unordered_map<std::string_view, std::unique_ptr<arm_compute::Tensor>>;
+using HyperParamsT = std::unordered_map<std::string_view, float>;
 
-/// Activation function type
-enum class ActivationType : unsigned int {
+enum class LayerType : uint8_t {
   ReLU,
-  Sigmoid,
-  Softmax,
-  Swish,
-  SiLU,
+  // Sigmoid,
+  // BatchNorm,
+  // Concatenation,
+  // Convolution,
+  // Flatten,
+  // Identity,
+  Linear, // Fully Connected
+  // PoolingAvg,
+  // PoolingMax,
+  // Reshape,
 };
 
-/// Operation type of the current layer
-enum class OperatorType : unsigned int {
-  Activation,
-  BatchNorm,
-  Concatenation,
-  Convolution,
-  Flatten,
-  Identity,
-  Linear, // Fully Connected
-  PoolingAvg,
-  PoolingMax,
-  Reshape,
+struct Layer;
+struct Range;
+struct InputRequirement;
+struct ForwardTableEntry;
+struct ExecutionUnit;
+
+struct Layer {
+  LayerID id;
+
+  LayerType type;
+
+  ParamsT params;
+  HyperParamsT hparams;
+
+  arm_compute::TensorShape input_shape, output_shape;
 };
 
 /// Required input range to compute the assigned output partition of the
-/// execution unit The range is defined as [start, end)
+/// execution unit The range is defined as [start, end).
 struct Range {
   int start = 0; // inclusive
   int end = 0;   // exclusive
 
-  Range() = default;
-
-  Range(int start, int end) : start(start), end(end) {}
-
   /// The number of elements in the range
-  int num_elements() const noexcept { return end - start; }
+  constexpr int num_elements() const noexcept { return end - start; }
 
-  /// Check if the range is valid (start < end)
-  bool valid() const noexcept { return start < end; }
+  /// Check if the range is valid. (start < end)
+  constexpr bool valid() const noexcept { return start < end; }
 
-  /// Check if the range overlaps with another range
-  bool overlaps(const Range &other) const noexcept {
+  /// Check if the range overlaps with another range.
+  constexpr bool overlaps(const Range &other) const noexcept {
     return (start < other.end) && (end > other.start);
   }
 
-  bool operator==(const Range &other) const noexcept {
+  constexpr bool operator==(const Range &other) const noexcept {
     return (start == other.start) && (end == other.end);
   }
-
-  bool operator!=(const Range &other) const noexcept {
-    return !(*this == other);
-  }
-};
-
-/// Activation parameters
-struct ActivationParams {
-  ActivationType type;
-};
-
-/// Linear parameters
-struct LinearParams {
-  unsigned int in_features = 0, out_features = 0;
-
-  std::unique_ptr<arm_compute::Tensor> weight, bias;
-};
-
-/// Convolution parameters
-struct ConvolutionParams {
-  unsigned int kernel_h = 0, kernel_w = 0;
-  unsigned int stride_h = 0, stride_w = 0;
-  unsigned int padding_h = 0, padding_w = 0; // Original padding
-
-  // Pre-padding amounts calculated by EdgeFlow based on paper's Eq. (5) & (6)
-  // These are applied before the core convolution operation if the layer's
-  // own padding is set to 0.
-  int prepad_top = 0;    // Eq. (5) in the paper (upper padding)
-  int prepad_bottom = 0; // Eq. (6) in the paper (bottom padding)
-  int prepad_left = 0;   // Assuming partitioning is only along height,
-  int prepad_right = 0;  // these might always be original padding_w or 0.
-
-  std::unique_ptr<arm_compute::Tensor> weight, bias;
-};
-
-struct PoolingParams {
-  unsigned int pool_h = 0, pool_w = 0;
-  unsigned int stride_h = 0, stride_w = 0;
-  unsigned int pad_h = 0, pad_w = 0; // Original padding
-
-  // Pre-padding amounts calculated by EdgeFlow based on paper's Eq. (5) & (6)
-  int prepad_top = 0;    // Eq. (5) in the paper (upper padding)
-  int prepad_bottom = 0; // Eq. (6) in the paper (bottom padding)
-  int prepad_left = 0;
-  int prepad_right = 0;
-};
-
-struct BatchNormParams {
-  std::unique_ptr<arm_compute::Tensor> mean, variance, beta, gamma;
-};
-
-struct ConcatenationParams {
-  unsigned int axis = 0; // Axis along which to concatenate
-};
-
-// TODO: Operation-specific parameters...
-
-using OperatorParams =
-        std::variant<ActivationParams, LinearParams, ConvolutionParams,
-                     PoolingParams, BatchNormParams, ConcatenationParams
-                     // TODO: Add other operation-specific parameters
-                     >;
-
-/// Computation operator including operation type of the current layer
-/// as well as the parameters for the layer
-struct Operator {
-  // Operation type of the current execution unit of the layer
-  OperatorType type;
-
-  // Operation-specific hyper-parameters
-  std::unique_ptr<OperatorParams> params;
 };
 
 /// Single input requirement of the execution unit
 struct InputRequirement {
-  // Source execution unit ID where the input comes from
+  // Source execution unit ID where the partial input comes from.
   ExecutionUnitID src_eu_id;
 
   // Required range from `src_eu_id`'s output
-  // used to compute the assigned output partition of the execution unit
   Range src_range; // May go outside [0, H)
 };
 
@@ -156,87 +89,56 @@ struct ForwardTableEntry {
   Range required_range;       // The required range of this execution unit's output
 };
 
-/// Defines the execution unit
-/// corresponding to generate a part of the output of the layer
 struct ExecutionUnit {
-  // The original layer ID which the execution unit belongs to
-  LayerID layer_id;
-
-  // The device ID on which the execution unit is assigned
-  DeviceID device_id;
-
-  // ID of the execution unit
   ExecutionUnitID id;
 
-  // The required input might be from multiple execution units
-  std::vector<InputRequirement> input_requirements;
+  std::shared_ptr<Layer> layer; // Pointer to the layer this execution unit belongs to
+  DeviceID assigned_device;
 
-  // The output range this unit is responsible for
-  // w.r.t. its original layer's output
+  std::unordered_map<std::string_view, InputRequirement> input_requirements;
+
   Range output_range;
 
-  // Operation of the current execution unit of the layer
-  Operator op;
-
-  // Forwarding table of the current execution unit
   std::vector<ForwardTableEntry> forward_table;
 
-  // For Orchestrator, assembled input information
-  arm_compute::TensorShape expected_input_shape;
+  arm_compute::TensorShape expected_input_shape, expected_output_shape;
 
-  // For Orchestrator, information of output this unit will produce
-  arm_compute::TensorShape expected_output_shape;
-
-  // Indicate if the execution unit is leaf or root
   bool is_leaf, is_root;
 
-  /// Find an input requirement by its source execution unit ID
-  const InputRequirement *
-  find_input_requirement_from_src(const ExecutionUnitID &src_eu_id) {
-    for (const auto &input_req: input_requirements) {
-      if (input_req.src_eu_id == src_eu_id) {
-        return &input_req;
-      }
+  /* == Optional fields for the convolution layer == */
+  // Pre-padding amounts calculated by EdgeFlow based on paper's Eq. (5) & (6)
+  int prepad_top = 0;    // Eq. (5) in the paper (upper padding)
+  int prepad_bottom = 0; // Eq. (6) in the paper (bottom padding)
+  int prepad_left = 0;
+  int prepad_right = 0;
+
+  const LayerType &get_type() const {
+    return layer->type;
+  }
+
+  const arm_compute::Tensor *get_param(const std::string_view &name) const {
+    auto it = layer->params.find(name);
+    if (it != layer->params.end()) {
+      return it->second.get();
+    }
+    return nullptr;
+  }
+
+  float *get_hparam(const std::string_view &name) const {
+    auto it = layer->hparams.find(name);
+    if (it != layer->hparams.end()) {
+      return &it->second;
     }
     return nullptr;
   }
 };
 
-/// Defines the logical layer
-/// corresponding to generate a part of the output of the model
-/// The layer consists of multiple execution units
-struct Layer {
-  // The layer ID
-  LayerID id;
-
-  // Original operation type of the layer
-  OperatorType type;
-
-  // Original operation-specific hyper-parameters
-  std::unique_ptr<OperatorParams> params;
-
-  // Layer input and output shapes
-  arm_compute::TensorShape input_shape, output_shape;
-
-  // The (children) execution units of the layer
-  // std::vector<ExecutionUnit> execution_units;
-};
-
-/// Defines the model as a DAG
 struct ModelDAG {
-  // The model name
-  std::string name;
+  std::string_view name;
 
-  // Layer mapping
-  std::unordered_map<LayerID, Layer> layers;
-
-  // Execution unit mapping
+  std::unordered_map<LayerID, std::shared_ptr<Layer>> layers;
   std::unordered_map<ExecutionUnitID, ExecutionUnit> eus;
 
-  // Adjacency list of the layer-wise model
-  std::unordered_map<LayerID, std::vector<LayerID>> layer_wise_graph;
-
-  // Model input and output shapes
   arm_compute::TensorShape input_shape, output_shape;
 };
 

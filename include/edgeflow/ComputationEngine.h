@@ -26,7 +26,7 @@ public:
         : eu(eu), input(std::move(input)) {}
   };
 
-  /// Enqueue an execution unit for processing
+  /// Enqueue an execution unit for processing to the task queue.
   /// @param eu Execution unit to run
   /// @param input The input tensor for the execution unit
   void submit_task(const ExecutionUnit &eu,
@@ -39,18 +39,20 @@ private:
   /// forward the output.
   void worker_thread_loop();
 
+  /// Execute the operator for the given execution unit.
+  /// This function is invoked by the `worker_thread_loop`.
   static std::unique_ptr<arm_compute::Tensor>
   execute_operator(
-          const ExecutionUnit &eu,
-          std::unique_ptr<arm_compute::Tensor> input);
+      const ExecutionUnit &eu,
+      std::unique_ptr<arm_compute::Tensor> input);
 
-  Orchestrator &orch_; // For invoking `on_computation_complete`
+  Orchestrator &orch_; // For calling `on_computation_complete`
   const ModelDAG &dag_;
 
   ThreadSafeQueue<Task> task_queue_;
   std::vector<std::thread> worker_threads_;
   std::atomic<bool> stop_{false};
-  const unsigned int num_workers_ = std::thread::hardware_concurrency();
+  const unsigned int num_workers_;
 };
 
 #endif // EDGEFLOW_COMPUTATIONENGINE_H
