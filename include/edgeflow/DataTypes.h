@@ -12,11 +12,11 @@
 void print_tensor(const arm_compute::Tensor &tensor,
                   const std::string &name = "tensor");
 
-using DeviceID = std::string_view;
-using LayerID = std::string_view;
-using ExecutionUnitID = std::string_view;
-using ParamsT = std::unordered_map<std::string_view, std::unique_ptr<arm_compute::Tensor>>;
-using HyperParamsT = std::unordered_map<std::string_view, float>;
+using DeviceID = std::string;
+using LayerID = std::string;
+using ExecutionUnitID = std::string;
+using ParamsT = std::unordered_map<std::string, std::unique_ptr<arm_compute::Tensor>>;
+using HyperParamsT = std::unordered_map<std::string, float>;
 
 enum class LayerType : uint8_t {
   ReLU,
@@ -95,7 +95,7 @@ struct ExecutionUnit {
   std::shared_ptr<Layer> layer; // Pointer to the layer this execution unit belongs to
   DeviceID assigned_device;
 
-  std::unordered_map<std::string_view, InputRequirement> input_requirements;
+  std::unordered_map<std::string, InputRequirement> input_requirements;
 
   Range output_range;
 
@@ -116,7 +116,7 @@ struct ExecutionUnit {
     return layer->type;
   }
 
-  const arm_compute::Tensor *get_param(const std::string_view &name) const {
+  const arm_compute::Tensor *get_param(const std::string &name) const {
     auto it = layer->params.find(name);
     if (it != layer->params.end()) {
       return it->second.get();
@@ -124,7 +124,7 @@ struct ExecutionUnit {
     return nullptr;
   }
 
-  float *get_hparam(const std::string_view &name) const {
+  float *get_hparam(const std::string &name) const {
     auto it = layer->hparams.find(name);
     if (it != layer->hparams.end()) {
       return &it->second;
@@ -134,7 +134,7 @@ struct ExecutionUnit {
 };
 
 struct ModelDAG {
-  std::string_view name;
+  std::string name;
 
   std::unordered_map<LayerID, std::shared_ptr<Layer>> layers;
   std::unordered_map<ExecutionUnitID, ExecutionUnit> eus;
